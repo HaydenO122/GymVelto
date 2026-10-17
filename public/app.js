@@ -1,10 +1,10 @@
-// Automatically inject the top-left RackAccess brand link on every page
+// Automatically inject the top-left Gymvelto brand link on every page
 document.addEventListener("DOMContentLoaded", () => {
   if (!document.getElementById("rack-access-brand")) {
     const brand = document.createElement("a");
     brand.id = "rack-access-brand";
     brand.href = "/dashboard";
-    brand.textContent = "RackAccess";
+    brand.textContent = "Gymvelto";
     brand.className = "brand-header";
     
     document.body.prepend(brand);

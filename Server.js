@@ -563,7 +563,7 @@ app.delete(
 initDb()
   .then(() => {
     app.listen(PORT, () => {
-      console.log(`Rack Access Server running on port ${PORT}`);
+      console.log(`Gymvelto Server running on port ${PORT}`);
     });
   })
   .catch((err) => {
