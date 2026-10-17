@@ -22,14 +22,22 @@
   <div class="container" style="max-width: 600px;">
     <h1>Member Registration & Payment</h1>
     <form id="signup-form">
+      <p class="help-text">Name, email, phone, and membership plan are required. Address, emergency contact, and photo are optional.</p>
+      <h2>Member contact details</h2>
       <label for="fullName">Full Name</label>
-      <input type="text" id="fullName" required placeholder="John Doe" />
+      <input type="text" id="fullName" maxlength="200" autocomplete="name" required placeholder="John Doe" />
 
       <label for="email">Email</label>
-      <input type="email" id="email" required placeholder="john@example.com" />
+      <input type="email" id="email" maxlength="254" autocomplete="email" required placeholder="john@example.com" />
 
       <label for="phone">Phone</label>
-      <input type="tel" id="phone" placeholder="803-555-0199" />
+      <input type="tel" id="phone" maxlength="50" minlength="5" autocomplete="tel" required placeholder="803-555-0199" />
+
+      <div id="member-extra-details"></div>
+      <h2>Member photo (optional)</h2>
+      <label for="member-photo-file">PNG or JPG, up to 1 MB</label><input id="member-photo-file" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg">
+      <img id="member-photo-preview" class="member-photo-preview" alt="Member photo preview" hidden>
+      <h2>Membership</h2>
 
       <label for="planId">Select Membership Plan</label>
       <select id="planId" required style="width: 100%; padding: 12px; background: #333; color: white; border: 1px solid #555; border-radius: 5px; margin-bottom: 15px;">
@@ -45,14 +53,24 @@
         Plug in your USB scanner, click into this box, and scan the key fob or barcode sticker.
       </small>
 
-      <label>Credit / Debit Card</label>
+      <fieldset id="waiver-section" hidden>
+        <legend>Member waiver</legend>
+        <p><a id="waiver-link" target="_blank" rel="noopener">Download and review the gym waiver</a></p>
+        <label for="waiver-name">Member’s full name acknowledging the waiver</label>
+        <input id="waiver-name" type="text" minlength="2" maxlength="200" autocomplete="name">
+        <label class="waiver-checkbox"><input id="waiver-accepted" type="checkbox">I am the member named above. I have reviewed and agree to this gym’s waiver.</label>
+        <p class="help-text">The member must review and complete this acknowledgement before registration.</p>
+      </fieldset>
+      <h2>Payment</h2><label>Credit / Debit Card</label>
       <div id="card-element" style="background: #333; padding: 12px; border-radius: 5px; margin-bottom: 15px;"></div>
 
-      <button type="submit" id="submitBtn">Register & Charge Membership</button>
+      <button type="submit" id="submitBtn" disabled>Register & Charge Membership</button>
       <p id="msg" style="margin-top: 15px; font-weight: bold;"></p>
     </form>
   </div>
 
+  <script src="/waiver-signup.js"></script>
+  <script src="/member-details.js"></script>
   <script>
     const barcodeInput = document.getElementById('barcode');
     const autoGenBtn = document.getElementById('autoGenBtn');
@@ -96,6 +114,7 @@
 
     async function init() {
       await loadPlans();
+      await GymWaiver.load();
 
       const keyRes = await fetch('/stripe-key');
       const { publicKey } = await keyRes.json();
@@ -106,9 +125,15 @@
 
       const form = document.getElementById('signup-form');
       const msg = document.getElementById('msg');
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = false;
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (submitBtn.disabled) return;
+        submitBtn.disabled = true;
+        try {
+        const photo = await MemberDetails.photo();
         msg.style.color = '#fff';
         msg.textContent = 'Processing payment...';
 
@@ -136,7 +161,9 @@
             email: document.getElementById('email').value,
             phone: document.getElementById('phone').value,
             planId: document.getElementById('planId').value,
-            barcode: barcodeInput.value.trim()
+            barcode: barcodeInput.value.trim(),
+            ...GymWaiver.payload(),
+            contactDetails: MemberDetails.payload(), photo
           })
         });
 
@@ -145,15 +172,23 @@
           msg.style.color = '#4caf50';
           msg.textContent = `Success! Member enrolled with Barcode: ${data.barcode}`;
           form.reset();
+          document.getElementById('member-photo-preview').hidden = true;
           card.clear();
+          await GymWaiver.load();
         } else {
           msg.style.color = '#f44336';
           msg.textContent = data.error || 'Registration failed.';
         }
+        } catch (err) {
+          msg.style.color = '#f44336';
+          msg.textContent = err.message || 'Registration failed. Please refresh and try again.';
+        } finally { submitBtn.disabled = false; }
       });
     }
 
-    init();
+    init().catch(err => {
+      document.getElementById('msg').textContent = err.message || 'Could not load signup. Please refresh.';
+    });
   </script>
   <script src="/app.js"></script>
 </body>

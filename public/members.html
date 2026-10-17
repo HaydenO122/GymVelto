@@ -113,20 +113,17 @@
       membersList.forEach(m => {
         const tr = document.createElement('tr');
         const isActive = m.status === 'active';
-        
-        tr.innerHTML = `
-          <td><strong>${m.fullName}</strong></td>
-          <td>${m.email}</td>
-          <td>${m.phone || '-'}</td>
-          <td><code>${m.barcode || 'N/A'}</code></td>
-          <td style="color: ${isActive ? '#4caf50' : '#f44336'}; font-weight: bold;">
-            ${m.status ? m.status.toUpperCase() : 'ACTIVE'}
-          </td>
-          <td>
-            <a href="/edit-member?barcode=${encodeURIComponent(m.barcode)}" class="btn-action">Edit / View</a>
-            <button onclick="deleteMember('${m.barcode}', '${m.fullName}')" class="btn-delete">Delete</button>
-          </td>
-        `;
+        const name = document.createElement('td');
+        if (m.hasPhoto) {
+          const photo = document.createElement('img');photo.src = `/api/member/${encodeURIComponent(m.barcode)}/photo`;
+          photo.alt = '';photo.className = 'member-roster-photo';photo.loading = 'lazy';name.append(photo);
+        }
+        const strong = document.createElement('strong');strong.textContent = m.fullName;name.append(strong);tr.append(name);
+        [m.email || '-', m.phone || '-', m.barcode || 'N/A'].forEach(value => { const td=document.createElement('td');td.textContent=value;tr.append(td); });
+        const status = document.createElement('td');status.textContent=(m.status || 'active').toUpperCase();status.style.color=isActive?'#4caf50':'#f44336';tr.append(status);
+        const actions=document.createElement('td');
+        const edit=document.createElement('a');edit.href=`/edit-member?barcode=${encodeURIComponent(m.barcode)}`;edit.className='btn-action';edit.textContent='Edit / View';
+        const remove=document.createElement('button');remove.className='btn-delete';remove.textContent='Delete';remove.onclick=()=>deleteMember(m.barcode,m.fullName);actions.append(edit,remove);tr.append(actions);
         tbody.appendChild(tr);
       });
     }
@@ -136,7 +133,7 @@
       const query = e.target.value.toLowerCase();
       const filtered = allMembers.filter(m => 
         m.fullName.toLowerCase().includes(query) ||
-        m.email.toLowerCase().includes(query) ||
+        (m.email || '').toLowerCase().includes(query) ||
         (m.barcode && m.barcode.toLowerCase().includes(query))
       );
       renderTable(filtered);

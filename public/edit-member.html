@@ -31,6 +31,12 @@
 
       <label for="phone">Phone Number</label>
       <input type="tel" id="phone" />
+      <div id="member-extra-details"></div>
+      <h2>Member photo (optional)</h2>
+      <img id="member-photo-preview" class="member-photo-preview" alt="Member photo" hidden>
+      <label for="member-photo-file">PNG or JPG, up to 1 MB</label><input id="member-photo-file" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg">
+      <button type="button" id="replace-photo">Save photo</button><button type="button" id="remove-photo" hidden>Remove photo</button><p id="photo-status" role="status"></p>
+      <h2>Waiver acknowledgement</h2><p id="member-waiver-record">Loading…</p>
 
       <label for="barcode">Barcode / Key Tag ID</label>
       <input type="text" id="barcode" required />
@@ -47,6 +53,7 @@
     </form>
   </div>
 
+  <script src="/member-details.js"></script><script src="/member-photo-edit.js"></script>
   <script>
     const urlParams = new URLSearchParams(window.location.search);
     const targetBarcode = urlParams.get('barcode');
@@ -58,7 +65,7 @@
       }
 
       try {
-        const res = await fetch(`/api/member/${targetBarcode}`);
+        const res = await fetch(`/api/member/${encodeURIComponent(targetBarcode)}`);
         if (!res.ok) throw new Error('Member not found');
         const data = await res.json();
 
@@ -66,6 +73,16 @@
         document.getElementById('fullName').value = data.fullName;
         document.getElementById('email').value = data.email;
         document.getElementById('phone').value = data.phone || '';
+        MemberDetails.fill(data.contactDetails || {});
+        if (data.hasPhoto) {
+          const photo = document.getElementById('member-photo-preview');photo.src = `/api/member/${encodeURIComponent(data.barcode)}/photo`;photo.hidden = false;
+          document.getElementById('remove-photo').hidden = false;
+        }
+        const waiverRecord = document.getElementById('member-waiver-record');
+        if (data.waiverDocumentId) {
+          waiverRecord.textContent = `Acknowledged by ${data.waiverSignedName} on ${new Date(data.waiverAcceptedAt).toLocaleString()}. `;
+          const link = document.createElement('a');link.href = `/api/documents/${data.waiverDocumentId}/file`;link.textContent = 'Download accepted waiver version';waiverRecord.append(link);
+        } else waiverRecord.textContent = 'No waiver acknowledgement recorded.';
         document.getElementById('barcode').value = data.barcode;
         document.getElementById('status').value = data.status || 'active';
 
@@ -86,6 +103,7 @@
         fullName: document.getElementById('fullName').value,
         email: document.getElementById('email').value,
         phone: document.getElementById('phone').value,
+        contactDetails: MemberDetails.payload(),
         barcode: document.getElementById('barcode').value.trim(),
         status: document.getElementById('status').value
       };

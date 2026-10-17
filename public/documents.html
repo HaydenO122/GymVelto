@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gymvelto — Gym Documents</title><link rel="stylesheet" href="/styles.css"></head>
+<body><nav><a href="/dashboard">Dashboard</a><a href="/members">Members</a><a href="/signup">Sign Up Member</a><a href="/documents" class="active">Documents</a><a href="/gym-profile">Gym Profile</a><a href="/logout">Logout</a></nav>
+<main class="container" style="max-width:900px"><h1>Gym Documents</h1><p>Upload your gym’s waiver and other member documents. Only your gym’s admins can access these files.</p>
+<form id="document-form"><label for="title">Document title</label><input id="title" maxlength="150" required placeholder="Membership waiver — October 2026">
+<label for="kind">Use this document as</label><select id="kind"><option value="document">General gym document</option><option value="waiver">Current signup waiver</option></select>
+<label for="file">PDF file (up to 5 MB)</label><input id="file" type="file" accept="application/pdf,.pdf" required>
+<p class="help-text">A new signup waiver replaces the current waiver for future registrations. Earlier versions and member acknowledgements stay saved. Archiving a waiver stops requiring it for future signups.</p>
+<button id="upload-button">Upload document</button></form><p id="document-message" role="status" aria-live="polite"></p>
+<h2>Your documents</h2><div id="document-list">Loading documents…</div><section id="acceptance-panel" hidden><h2 id="acceptance-title">Member acknowledgements</h2><div id="acceptance-list"></div></section>
+</main><script src="/app.js"></script><script src="/documents-page.js"></script></body></html>

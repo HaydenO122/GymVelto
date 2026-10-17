@@ -69,7 +69,8 @@
 </nav>
 
   <div class="container" style="max-width: 800px;">
-    <h1>Facility Command Center</h1>
+    <div class="gym-dashboard-brand"><img id="gym-dashboard-logo" class="gym-logo" alt="Gym logo" hidden><p id="gym-dashboard-name" hidden></p></div>
+    <h1 id="gym-dashboard-title">Facility Command Center</h1>
 
     <div class="stats-grid">
       <div class="stat-card">
@@ -91,16 +92,6 @@
       <a href="/scan" class="btn-action scan">🔍 Scan Barcode</a>
       <a href="/signup" class="btn-action signup">💳 New Sign-Up</a>
       <a href="/members" class="btn-action">📋 View Roster</a>
-    </div>
-
-    <!-- Dedicated Add New Admin Card Option -->
-    <div class="admin-card">
-      <h2>Add New Gym Admin</h2>
-      <form action="/add-admin" method="POST">
-        <input type="text" name="newUsername" placeholder="New Admin Username" required style="margin-bottom: 10px;" />
-        <input type="password" name="newPassword" placeholder="New Admin Password" required style="margin-bottom: 10px;" />
-        <button type="submit">Create Admin Account</button>
-      </form>
     </div>
 
     <h2>Recent Members Roster</h2>

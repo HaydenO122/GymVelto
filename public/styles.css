@@ -6,6 +6,24 @@ body {
   padding: 0;
 }
 
+.gym-logo { display: block; max-width: 200px; max-height: 100px; object-fit: contain; margin: 12px auto; }
+.gym-logo[hidden] { display: none; }
+.member-photo-preview { width: 120px; height: 120px; object-fit: cover; border-radius: 12px; margin: 12px 0; }
+.member-photo-preview[hidden] { display: none; }
+.member-roster-photo { width: 38px; height: 38px; object-fit: cover; border-radius: 50%; vertical-align: middle; margin-right: 10px; }
+input { box-sizing: border-box; }
+.gym-dashboard-brand { text-align: center; }
+.gym-dashboard-brand p { font-weight: bold; color: #aaa; }
+.gym-document-card { padding: 18px; margin: 15px 0; background: #292929; border-radius: 8px; }
+.gym-document-card button { width: auto; margin: 8px 12px; }
+.gym-document-card a, .container a:not(.btn-action):not(.btn-add) { color: #70c9ff; }
+.help-text { color: #bbb; font-size: 0.9rem; line-height: 1.5; }
+select { width: 100%; padding: 12px; background: #333; color: #eee; margin: 8px 0 16px; border-radius: 5px; }
+.waiver-checkbox { display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; }
+.waiver-checkbox input { width: auto; margin-top: 5px; flex-shrink: 0; }
+button:disabled { opacity: 0.55; cursor: wait; }
+@media (max-width: 1100px) { nav { flex-wrap: wrap; padding-top: 65px; } }
+
 /* Top-Left Brand Logo using Impact Font */
 .brand-header {
   position: absolute;

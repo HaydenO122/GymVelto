@@ -7,6 +7,9 @@ const { Pool, types } = require('pg');
 const bcrypt = require('bcryptjs');
 const Stripe = require('stripe');
 const path = require('path');
+const { initDocuments, checkWaiver, documentRoutes } = require('./documents');
+const { initProfile, profileRoutes } = require('./gym-profile');
+const { initMemberDetails, contactDetails, signupPhoto, memberPhotoRoutes } = require('./member-details');
 
 // Return NUMERIC columns as JS numbers (pg returns strings by default)
 types.setTypeParser(1700, (v) => parseFloat(v));
@@ -80,6 +83,10 @@ async function initDb() {
     );
   `);
 
+  await initDocuments(pool);
+  await initProfile(pool);
+  await initMemberDetails(pool);
+
   // First-time admin account: set ADMIN_USERNAME and ADMIN_PASSWORD in env
   const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM admins');
   if (rows[0].n === 0) {
@@ -105,6 +112,7 @@ async function initDb() {
 // -----------------------------------------------------------------------------
 
 app.set('trust proxy', 1); // needed behind Render's proxy for secure cookies
+app.use('/create-subscription', express.json({ limit: '2mb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
@@ -133,6 +141,10 @@ function requireLogin(req, res, next) {
   res.redirect('/index.html');
 }
 
+app.use('/api/documents', documentRoutes(pool));
+app.use('/api/gym-profile', profileRoutes(pool));
+app.use('/api/member', memberPhotoRoutes(pool));
+
 // -----------------------------------------------------------------------------
 // PAGE NAVIGATION ROUTES
 // -----------------------------------------------------------------------------
@@ -144,7 +156,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-const pages = ['dashboard', 'scan', 'signup', 'members', 'edit-member', 'plans'];
+const pages = ['dashboard', 'scan', 'signup', 'members', 'edit-member', 'plans', 'documents', 'gym-profile', 'admins'];
 pages.forEach((page) => {
   app.get(`/${page}`, requireLogin, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', `${page}.html`));
@@ -250,9 +262,14 @@ app.post(
     const { newUsername, newPassword } = req.body;
     const currentGymId = req.session.admin.gymId;
 
+    if (typeof newUsername !== 'string' || !newUsername.trim() || newUsername.length > 100 ||
+        typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 200) {
+      return res.status(400).send('<h3>Enter a username and a password of 8–200 characters. <a href="/admins">Back to Admins</a></h3>');
+    }
+
     const existing = await pool.query('SELECT 1 FROM admins WHERE username = $1', [newUsername]);
     if (existing.rowCount > 0) {
-      return res.send('<h3>Username already exists! <a href="/dashboard">Back to Dashboard</a></h3>');
+      return res.send('<h3>Username already exists! <a href="/admins">Back to Admins</a></h3>');
     }
 
     const hash = await bcrypt.hash(newPassword, 10);
@@ -260,7 +277,7 @@ app.post(
       'INSERT INTO admins (username, "passwordHash", "gymId", "requiresPasswordChange") VALUES ($1, $2, $3, false)',
       [newUsername, hash, currentGymId]
     );
-    res.send('<h3>Admin Created Successfully! <a href="/dashboard">Back to Dashboard</a></h3>');
+    res.send('<h3>Admin Created Successfully! <a href="/admins">Back to Admins</a></h3>');
   })
 );
 
@@ -361,6 +378,15 @@ app.post('/create-subscription', requireLogin, async (req, res) => {
   const gymId = req.session.admin.gymId;
 
   try {
+    // Validate the gym's current waiver before creating a customer or charging a card.
+    const waiver = await checkWaiver(pool, gymId, req.body);
+    const details = contactDetails(req.body.contactDetails);
+    const photo = signupPhoto(req.body.photo);
+    if (typeof fullName !== 'string' || !fullName.trim() || fullName.length > 200 ||
+        typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+        typeof phone !== 'string' || phone.trim().length < 5 || phone.length > 50) {
+      return res.status(400).json({ error: 'Enter a full name, valid email, and phone number.' });
+    }
     let assignedBarcode = barcode;
     if (assignedBarcode) {
       const dup = await pool.query('SELECT 1 FROM members WHERE "gymId" = $1 AND barcode = $2', [
@@ -440,9 +466,12 @@ app.post('/create-subscription', requireLogin, async (req, res) => {
     }
 
     await pool.query(
-      `INSERT INTO members
-        ("fullName", email, phone, barcode, status, "planId", "stripeCustomerId", "stripeSubscriptionId", "gymId")
-       VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8)`,
+      `WITH new_member AS (INSERT INTO members
+        ("fullName", email, phone, barcode, status, "planId", "stripeCustomerId", "stripeSubscriptionId", "gymId",
+         "waiverDocumentId", "waiverAcceptedAt", "waiverSignedName", "contactDetails")
+       VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id)
+       INSERT INTO member_photos ("memberId", "gymId", content, "contentType")
+       SELECT id, $8, $13::bytea, $14 FROM new_member WHERE $13::bytea IS NOT NULL`,
       [
         fullName,
         email,
@@ -452,6 +481,12 @@ app.post('/create-subscription', requireLogin, async (req, res) => {
         customer.id,
         createdSubscriptionId,
         gymId,
+        waiver?.documentId || null,
+        waiver?.acceptedAt || null,
+        waiver?.signedName || null,
+        JSON.stringify(details),
+        photo?.content || null,
+        photo?.type || null,
       ]
     );
 
@@ -467,7 +502,7 @@ app.get(
   '/api/members',
   requireLogin,
   wrap(async (req, res) => {
-    const { rows } = await pool.query('SELECT * FROM members WHERE "gymId" = $1 ORDER BY id', [
+    const { rows } = await pool.query('SELECT m.*, EXISTS (SELECT 1 FROM member_photos p WHERE p."memberId" = m.id AND p."gymId" = m."gymId") AS "hasPhoto" FROM members m WHERE m."gymId" = $1 ORDER BY m.id', [
       req.session.admin.gymId,
     ]);
     res.json(rows);
@@ -479,7 +514,7 @@ app.get(
   '/api/member/:barcode',
   requireLogin,
   wrap(async (req, res) => {
-    const { rows } = await pool.query('SELECT * FROM members WHERE "gymId" = $1 AND barcode = $2', [
+    const { rows } = await pool.query('SELECT m.*, EXISTS (SELECT 1 FROM member_photos p WHERE p."memberId" = m.id AND p."gymId" = m."gymId") AS "hasPhoto" FROM members m WHERE m."gymId" = $1 AND m.barcode = $2', [
       req.session.admin.gymId,
       req.params.barcode,
     ]);
@@ -497,11 +532,13 @@ app.post(
     const { originalBarcode, fullName, email, phone, barcode, status } = req.body;
 
     try {
+      const details = req.body.contactDetails === undefined ? null : contactDetails(req.body.contactDetails);
       const result = await pool.query(
         `UPDATE members
-         SET "fullName" = $1, email = $2, phone = $3, barcode = $4, status = $5
+         SET "fullName" = $1, email = $2, phone = $3, barcode = $4, status = $5,
+             "contactDetails" = COALESCE($8::jsonb, "contactDetails")
          WHERE "gymId" = $6 AND barcode = $7`,
-        [fullName, email, phone || '', barcode, status, gymId, originalBarcode]
+        [fullName, email, phone || '', barcode, status, gymId, originalBarcode, details === null ? null : JSON.stringify(details)]
       );
       if (result.rowCount === 0) {
         return res.status(404).json({ error: 'Member record not found.' });
@@ -510,6 +547,9 @@ app.post(
     } catch (err) {
       if (err.code === '23505') {
         return res.status(400).json({ error: 'That barcode is already assigned to another member.' });
+      }
+      if (err.message.startsWith('Invalid member contact') || err.message.startsWith('Please shorten the')) {
+        return res.status(400).json({ error: err.message });
       }
       throw err;
     }
