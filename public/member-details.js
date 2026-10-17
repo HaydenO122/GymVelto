@@ -21,11 +21,18 @@ window.MemberDetails = {
 };
 const detailsHost = document.getElementById('member-extra-details');
 if (detailsHost) {
+  let grid;
   MemberDetails.fields.forEach(([key,label,max,autocomplete],index) => {
-    if (index === 0 || index === 6) { const heading=document.createElement('h2');heading.textContent=index===0?'Address (optional)':'Emergency contact (optional)';detailsHost.append(heading); }
+    if (index === 0 || index === 6) {
+      const group=document.createElement('section');group.className='member-details-group';
+      const heading=document.createElement('h2');heading.textContent=index===0?'Address (optional)':'Emergency contact (optional)';
+      grid=document.createElement('div');grid.className='member-details-grid';group.append(heading,grid);detailsHost.append(group);
+    }
+    const field=document.createElement('div');field.className='form-field';
+    if (key === 'addressLine1') field.classList.add('field-full');
     const caption=document.createElement('label');caption.htmlFor=`member-${key}`;caption.textContent=label;
     const input=document.createElement('input');input.id=`member-${key}`;input.maxLength=max;input.autocomplete=autocomplete;
-    input.type=key==='emergencyPhone'?'tel':'text';detailsHost.append(caption,input);
+    input.type=key==='emergencyPhone'?'tel':'text';field.append(caption,input);grid.append(field);
   });
 }
 let memberPhotoUrl;

@@ -22,7 +22,6 @@ select { width: 100%; padding: 12px; background: #333; color: #eee; margin: 8px 
 .waiver-checkbox { display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; }
 .waiver-checkbox input { width: auto; margin-top: 5px; flex-shrink: 0; }
 button:disabled { opacity: 0.55; cursor: wait; }
-@media (max-width: 1100px) { nav { flex-wrap: wrap; padding-top: 65px; } }
 
 /* Top-Left Brand Logo using Impact Font */
 .brand-header {
@@ -136,4 +135,41 @@ th, td {
   color: #eee;
   border: 1px solid #444;
   text-align: left;
+}
+
+/* Keep labels above their fields, including fields added by member-details.js. */
+.signup-container { max-width: 820px; width: calc(100% - 32px); box-sizing: border-box; padding: 28px; }
+.signup-container h1 { margin: 0 0 12px; font-size: clamp(24px, 4vw, 32px); }
+#signup-form { gap: 22px; }
+#signup-form > .help-text { margin: 0; line-height: 1.6; }
+.signup-section, #signup-form .member-details-group { margin: 0; padding: 20px; border: 1px solid #3c3c3c; border-radius: 10px; min-width: 0; }
+.signup-section h2, .member-details-group h2 { text-align: left; margin: 0 0 18px; font-size: 18px; }
+.signup-section legend { padding: 0 8px; font-size: 18px; font-weight: bold; }
+.signup-fields, .member-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 20px; }
+.field-full { grid-column: 1 / -1; }
+.form-field { min-width: 0; }
+.form-field label { display: block; font-size: 14px; font-weight: 600; line-height: 1.4; margin: 0 0 8px; }
+.form-field input, .form-field select { display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 46px; margin: 0; padding: 12px; border: 1px solid #555; border-radius: 6px; font: inherit; background: #292929; color: #eee; }
+.form-field input:focus, .form-field select:focus { outline: 2px solid #4caf50; outline-offset: 2px; }
+.form-field input::placeholder { color: #aaa; }
+.form-field input[type="file"] { font-size: 14px; padding: 10px; }
+.form-field input[type="file"]::file-selector-button { margin-right: 12px; padding: 6px 10px; border: 0; border-radius: 4px; background: #444; color: white; cursor: pointer; }
+#member-extra-details { display: grid; gap: 22px; }
+.signup-section > .form-field + .form-field { margin-top: 18px; }
+.barcode-controls { display: flex; align-items: stretch; gap: 10px; }
+.barcode-controls input { flex: 1; width: 0; }
+.barcode-controls button { flex: 0 0 auto; padding: 10px 14px; background: #555; }
+.form-field small { display: block; margin-top: 10px; }
+#waiver-section[hidden] { display: none; }
+#waiver-section .waiver-checkbox { margin-top: 18px; font-size: 14px; }
+#waiver-section .waiver-checkbox input { width: 18px; height: 18px; min-height: 0; margin: 2px 0 0; }
+#card-element { min-height: 22px; padding: 14px; background: #292929; border: 1px solid #555; border-radius: 6px; }
+#submitBtn { min-height: 48px; font-weight: bold; }
+@media (max-width: 1100px) { nav { flex-wrap: wrap; padding-top: 65px; } }
+@media (max-width: 600px) {
+  .signup-container { padding: 18px; margin: 20px auto; }
+  .signup-fields, .member-details-grid { grid-template-columns: minmax(0, 1fr); }
+  .signup-section, #signup-form .member-details-group { padding: 16px; }
+  .barcode-controls { flex-direction: column; }
+  .barcode-controls input { width: 100%; flex: auto; }
 }

@@ -19,55 +19,60 @@
     <a href="/logout">Logout</a>
   </nav>
 
-  <div class="container" style="max-width: 600px;">
+  <main class="container signup-container">
     <h1>Member Registration & Payment</h1>
     <form id="signup-form">
       <p class="help-text">Name, email, phone, and membership plan are required. Address, emergency contact, and photo are optional.</p>
-      <h2>Member contact details</h2>
+      <section class="signup-section"><h2>Member contact details</h2><div class="signup-fields">
+      <div class="form-field field-full">
       <label for="fullName">Full Name</label>
       <input type="text" id="fullName" maxlength="200" autocomplete="name" required placeholder="John Doe" />
-
+      </div><div class="form-field">
       <label for="email">Email</label>
       <input type="email" id="email" maxlength="254" autocomplete="email" required placeholder="john@example.com" />
-
+      </div><div class="form-field">
       <label for="phone">Phone</label>
       <input type="tel" id="phone" maxlength="50" minlength="5" autocomplete="tel" required placeholder="803-555-0199" />
+      </div></div></section>
 
       <div id="member-extra-details"></div>
-      <h2>Member photo (optional)</h2>
+      <section class="signup-section"><h2>Member photo (optional)</h2><div class="form-field">
       <label for="member-photo-file">PNG or JPG, up to 1 MB</label><input id="member-photo-file" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg">
       <img id="member-photo-preview" class="member-photo-preview" alt="Member photo preview" hidden>
-      <h2>Membership</h2>
+      </div></section><section class="signup-section"><h2>Membership</h2>
 
+      <div class="form-field">
       <label for="planId">Select Membership Plan</label>
-      <select id="planId" required style="width: 100%; padding: 12px; background: #333; color: white; border: 1px solid #555; border-radius: 5px; margin-bottom: 15px;">
+      <select id="planId" required>
         <option value="">Loading plans...</option>
       </select>
-
+      </div><div class="form-field">
       <label for="barcode">Assign Barcode / Key Tag ID</label>
-      <div style="display: flex; gap: 8px;">
-        <input type="text" id="barcode" placeholder="Scan USB tag or type barcode ID..." style="flex: 1;" />
-        <button type="button" id="autoGenBtn" style="background-color: #555; white-space: nowrap;">Auto-Generate</button>
+      <div class="barcode-controls">
+        <input type="text" id="barcode" placeholder="Scan tag or type barcode ID" />
+        <button type="button" id="autoGenBtn">Auto-Generate</button>
       </div>
-      <small style="color: #888; display: block; margin-top: 4px; margin-bottom: 15px;">
+      <small class="help-text">
         Plug in your USB scanner, click into this box, and scan the key fob or barcode sticker.
       </small>
+      </div></section>
 
-      <fieldset id="waiver-section" hidden>
+      <fieldset id="waiver-section" class="signup-section" hidden>
         <legend>Member waiver</legend>
         <p><a id="waiver-link" target="_blank" rel="noopener">Download and review the gym waiver</a></p>
-        <label for="waiver-name">Member’s full name acknowledging the waiver</label>
+        <div class="form-field"><label for="waiver-name">Member’s full name acknowledging the waiver</label>
         <input id="waiver-name" type="text" minlength="2" maxlength="200" autocomplete="name">
+        </div>
         <label class="waiver-checkbox"><input id="waiver-accepted" type="checkbox">I am the member named above. I have reviewed and agree to this gym’s waiver.</label>
         <p class="help-text">The member must review and complete this acknowledgement before registration.</p>
       </fieldset>
-      <h2>Payment</h2><label>Credit / Debit Card</label>
-      <div id="card-element" style="background: #333; padding: 12px; border-radius: 5px; margin-bottom: 15px;"></div>
+      <section class="signup-section"><h2>Payment</h2><div class="form-field"><label for="card-element">Credit / Debit Card</label>
+      <div id="card-element"></div></div></section>
 
       <button type="submit" id="submitBtn" disabled>Register & Charge Membership</button>
       <p id="msg" style="margin-top: 15px; font-weight: bold;"></p>
     </form>
-  </div>
+  </main>
 
   <script src="/waiver-signup.js"></script>
   <script src="/member-details.js"></script>
