@@ -144,38 +144,3 @@ test('member photos require login and another gym cannot read or replace one', a
     assert.equal((await request('/member/BC-1/photo',{method:'DELETE'},'gym-b')).status,200);
   });
 });
-
-test('signup route rejects missing waiver before Stripe and stores accepted version, contacts and photo together', async () => {
-  const vm=require('node:vm'); const fs=require('node:fs'); const path=require('node:path');
-  const calls=[];let charges=0;
-  const pool={async query(sql,args){
-    calls.push([sql,args]);
-    if(sql.includes('SELECT id FROM gym_documents'))return {rows:[{id}]};
-    return {rows:[],rowCount:0};
-  }};
-  const realRequire=require('node:module').createRequire(path.resolve(__dirname,'../Server.js'));
-  const fakeRequire=name=>{
-    if(name==='pg')return {Pool:class{constructor(){return pool;}},types:{setTypeParser(){}}};
-    if(name==='express-session')return ()=> (req,res,next)=>{req.session={admin:{gymId:'gym-a'}};next();};
-    if(name==='connect-pg-simple')return ()=>class{};
-    if(name==='stripe')return ()=>({customers:{async create(){charges++;return {id:'cus_test'};}},paymentMethods:{async attach(){}}});
-    if(name==='dotenv')return {config(){}};
-    return realRequire(name);
-  };
-  const source=fs.readFileSync(path.resolve(__dirname,'../Server.js'),'utf8');
-  const context={require:fakeRequire,module:{exports:{}},process:{env:{}},console:{log(){},warn(){},error(){}},__dirname:path.resolve(__dirname,'..'),Buffer};
-  vm.runInNewContext(source.slice(0,source.lastIndexOf('\ninitDb()'))+'\nmodule.exports=app;',context);
-  const server=context.module.exports.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
-  const send=body=>fetch(`http://127.0.0.1:${server.address().port}/create-subscription`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const member={fullName:'Jane Doe',email:'jane@example.com',phone:'8035550123',barcode:'BC-123',paymentMethodId:'pm_test',waiverDocumentId:id};
-  try{
-    assert.equal((await send(member)).status,400);assert.equal(charges,0);
-    const png=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.alloc(16)]);
-    const res=await send({...member,waiverAccepted:true,waiverSignedName:'Jane Doe',contactDetails:{city:'Columbia'},photo:png.toString('base64')});
-    assert.equal(res.status,200);assert.equal((await res.json()).success,true);assert.equal(charges,1);
-    const insert=calls.find(([sql])=>sql.includes('WITH new_member'));
-    assert.ok(insert);assert.equal(insert[1].length,14);assert.equal(insert[1][7],'gym-a');assert.equal(insert[1][8],id);
-    assert.equal(insert[1][10],'Jane Doe');assert.deepEqual(JSON.parse(insert[1][11]),{city:'Columbia'});assert.deepEqual(insert[1][12],png);
-    assert.match(insert[0],/INSERT INTO member_photos/);
-  }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
-});

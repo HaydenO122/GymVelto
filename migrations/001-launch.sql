@@ -1,0 +1,13 @@
+ALTER TABLE gyms ADD COLUMN IF NOT EXISTS "stripeAccountId" TEXT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS "stripeSubscriptionId" TEXT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS "billingStatus" TEXT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS "enrollmentId" UUID;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS "enrollmentHash" TEXT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now();
+CREATE UNIQUE INDEX IF NOT EXISTS member_enrollment_per_gym ON members ("gymId", "enrollmentId");
+CREATE INDEX IF NOT EXISTS members_gym_subscription ON members ("gymId", "stripeSubscriptionId");
+CREATE INDEX IF NOT EXISTS plans_gym ON plans ("gymId");
+CREATE INDEX IF NOT EXISTS admins_gym ON admins ("gymId");
+CREATE TABLE IF NOT EXISTS login_attempts (key TEXT PRIMARY KEY, attempts INTEGER NOT NULL, expires_at TIMESTAMPTZ NOT NULL);
+CREATE TABLE IF NOT EXISTS check_ins (id BIGSERIAL PRIMARY KEY, "gymId" TEXT NOT NULL, "memberId" INTEGER REFERENCES members(id) ON DELETE SET NULL, access BOOLEAN NOT NULL, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS check_ins_gym_time ON check_ins ("gymId", "createdAt" DESC);

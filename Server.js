@@ -7,6 +7,10 @@ const { Pool, types } = require('pg');
 const bcrypt = require('bcryptjs');
 const Stripe = require('stripe');
 const path = require('path');
+const fs = require('node:fs');
+const crypto = require('node:crypto');
+const security = require('./security');
+const billing = require('./billing');
 const { initDocuments, checkWaiver, documentRoutes } = require('./documents');
 const { initProfile, profileRoutes } = require('./gym-profile');
 const { initMemberDetails, contactDetails, signupPhoto, memberPhotoRoutes } = require('./member-details');
@@ -16,7 +20,8 @@ types.setTypeParser(1700, (v) => parseFloat(v));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const isProd = process.env.NODE_ENV === 'production';
+const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+if (isProd && (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32)) throw new Error('A SESSION_SECRET of at least 32 characters is required.');
 
 // Platform fee percentage collected on transactions (Default: 5%)
 const PLATFORM_FEE_PERCENT = parseFloat(process.env.PLATFORM_FEE_PERCENT || 5);
@@ -25,12 +30,13 @@ const PLATFORM_FEE_PERCENT = parseFloat(process.env.PLATFORM_FEE_PERCENT || 5);
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Neon Postgres connection
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000 });
+pool.on('error', err => console.error('Database pool error', {code: err.code}));
 
 // Wrap async routes so errors don't crash the server
 const wrap = (fn) => (req, res, next) =>
   fn(req, res, next).catch((err) => {
-    console.error(err);
+    console.error('Request failed', {type:err.type || err.name,code:err.code});
     res.status(500).json({ error: 'Server error' });
   });
 
@@ -83,6 +89,8 @@ async function initDb() {
     );
   `);
 
+  await pool.query(fs.readFileSync(path.join(__dirname,'migrations','001-launch.sql'),'utf8'));
+  await pool.query('DELETE FROM login_attempts WHERE expires_at < now()');
   await initDocuments(pool);
   await initProfile(pool);
   await initMemberDetails(pool);
@@ -112,10 +120,14 @@ async function initDb() {
 // -----------------------------------------------------------------------------
 
 app.set('trust proxy', 1); // needed behind Render's proxy for secure cookies
+app.disable('x-powered-by');
+app.use(security.headers);
+app.post('/stripe/webhook', express.raw({type:'application/json',limit:'1mb'}), billing.webhook(pool,stripe));
+app.use(security.sameOrigin);
 app.use('/create-subscription', express.json({ limit: '2mb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
+
 
 if (!process.env.SESSION_SECRET) {
   console.warn('SESSION_SECRET is not set. Set it in your env before going live.');
@@ -136,10 +148,14 @@ app.use(
   })
 );
 
-function requireLogin(req, res, next) {
-  if (req.session && req.session.admin) return next();
-  res.redirect('/index.html');
-}
+const requireLogin = security.requireLogin;
+const privatePages = new Set(['dashboard','scan','signup','members','edit-member','plans','documents','gym-profile','admins','payments','getting-started','billing','check-ins']);
+app.use((req,res,next) => {
+  const page = req.path.replace(/^\//,'').replace(/\.html$/,'');
+  if (privatePages.has(page)) return requireLogin(req,res,next);
+  next();
+});
+app.use(express.static(path.join(__dirname,'public'), {index:false}));
 
 app.use('/api/documents', documentRoutes(pool));
 app.use('/api/gym-profile', profileRoutes(pool));
@@ -167,41 +183,27 @@ pages.forEach((page) => {
 // API & ACTION ENDPOINTS
 // -----------------------------------------------------------------------------
 
-// Provision new gym accounts
-app.get(
-  '/provision-gym',
-  wrap(async (req, res) => {
-    const { gymId, gymName, username } = req.query;
+['getting-started','billing','check-ins'].forEach(page=>app.get('/'+page,requireLogin,(req,res)=>res.sendFile(path.join(__dirname,'public','workspace.html'))));
+app.get('/api/check-ins',requireLogin,wrap(async(req,res)=>{
+  const {rows}=await pool.query('SELECT c.id,c.access,c."createdAt",m."fullName" FROM check_ins c LEFT JOIN members m ON m.id=c."memberId" AND m."gymId"=c."gymId" WHERE c."gymId"=$1 ORDER BY c."createdAt" DESC LIMIT 100',[req.session.admin.gymId]);
+  res.json(rows);
+}));
 
-    if (!gymId || !gymName || !username) {
-      return res.send('Missing parameters. Format: ?gymId=...&gymName=...&username=...');
-    }
-
-    await pool.query(
-      'INSERT INTO gyms (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING',
-      [gymId, gymName]
-    );
-
-    const hash = await bcrypt.hash('1234', 10);
-    await pool.query(
-      `INSERT INTO admins (username, "passwordHash", "gymId", "requiresPasswordChange") 
-       VALUES ($1, $2, $3, true)`,
-      [username, hash, gymId]
-    );
-
-    res.send(`Successfully provisioned ${gymName}! Tell them to log in with username: ${username} and password: 1234`);
-  })
-);
+// Gym provisioning is restricted to the authenticated operator CLI, never a public URL.
+app.all('/provision-gym', (req,res) => res.status(410).json({error:'Public provisioning is disabled. Contact gymvelto@gmail.com for beta access.'}));
 
 // Admin login
 app.post(
   '/login',
+  security.loginLimiter(pool),
   wrap(async (req, res) => {
     const { username, password } = req.body;
+    if (typeof username !== 'string' || username.length > 100 || typeof password !== 'string' || Buffer.byteLength(password,'utf8') > 72) return res.status(400).send('Enter a valid username and password.');
     const { rows } = await pool.query('SELECT * FROM admins WHERE username = $1', [username]);
     const admin = rows[0];
 
     if (admin && (await bcrypt.compare(password || '', admin.passwordHash))) {
+      await new Promise((resolve,reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
       
       if (admin.requiresPasswordChange) {
         req.session.pendingAdmin = { id: admin.id, username: admin.username, gymId: admin.gymId };
@@ -209,17 +211,18 @@ app.post(
           <div style="font-family: sans-serif; max-width: 400px; margin: 50px auto; text-align: center;">
             <h3>Welcome! Please set your permanent secure password.</h3>
             <form action="/api/setup-password" method="POST" style="display: flex; flex-direction: column; gap: 10px;">
-              <input type="password" name="newPassword" placeholder="New Password" required style="padding: 10px; font-size: 16px;">
+              <input type="password" name="newPassword" placeholder="New Password (12+ characters)" minlength="12" maxlength="72" required style="padding: 10px; font-size: 16px;">
               <button type="submit" style="padding: 10px; font-size: 16px; background-color: #007bff; color: white; border: none; cursor: pointer;">Save & Login</button>
             </form>
           </div>
         `);
       }
 
-      req.session.admin = { username: admin.username, gymId: admin.gymId };
+      req.session.admin = { id: admin.id, username: admin.username, gymId: admin.gymId };
+      await new Promise((resolve,reject) => req.session.save(err => err ? reject(err) : resolve()));
       return res.redirect('/dashboard');
     }
-    res.send('<h3>Invalid Username or Password. <a href="/">Try Again</a></h3>');
+    res.status(401).send('<h3>Invalid Username or Password. <a href="/">Try Again</a></h3>');
   })
 );
 
@@ -234,17 +237,19 @@ app.post(
     const { newPassword } = req.body;
     const admin = req.session.pendingAdmin;
 
-    const newHash = await bcrypt.hash(newPassword, 10);
+    if (!security.validPassword(newPassword)) return res.status(400).send('Use at least 12 characters and at most 72 UTF-8 bytes.');
+    const newHash = await bcrypt.hash(newPassword, 12);
 
     await pool.query(
       `UPDATE admins 
        SET "passwordHash" = $1, "requiresPasswordChange" = false 
-       WHERE id = $2`,
-      [newHash, admin.id]
+       WHERE id = $2 AND "gymId" = $3`,
+      [newHash, admin.id, admin.gymId]
     );
 
-    req.session.admin = { username: admin.username, gymId: admin.gymId };
-    delete req.session.pendingAdmin;
+    await new Promise((resolve,reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
+    req.session.admin = { id:admin.id, username: admin.username, gymId: admin.gymId };
+    await new Promise((resolve,reject) => req.session.save(err => err ? reject(err) : resolve()));
 
     res.redirect('/dashboard');
   })
@@ -263,8 +268,8 @@ app.post(
     const currentGymId = req.session.admin.gymId;
 
     if (typeof newUsername !== 'string' || !newUsername.trim() || newUsername.length > 100 ||
-        typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 200) {
-      return res.status(400).send('<h3>Enter a username and a password of 8–200 characters. <a href="/admins">Back to Admins</a></h3>');
+        !security.validPassword(newPassword)) {
+      return res.status(400).send('<h3>Enter a username and a password of 8â€“200 characters. <a href="/admins">Back to Admins</a></h3>');
     }
 
     const existing = await pool.query('SELECT 1 FROM admins WHERE username = $1', [newUsername]);
@@ -272,7 +277,7 @@ app.post(
       return res.send('<h3>Username already exists! <a href="/admins">Back to Admins</a></h3>');
     }
 
-    const hash = await bcrypt.hash(newPassword, 10);
+    const hash = await bcrypt.hash(newPassword, 12);
     await pool.query(
       'INSERT INTO admins (username, "passwordHash", "gymId", "requiresPasswordChange") VALUES ($1, $2, $3, false)',
       [newUsername, hash, currentGymId]
@@ -283,8 +288,13 @@ app.post(
 
 // Publishable Stripe key
 app.get('/stripe-key', (req, res) => {
-  res.json({ publicKey: process.env.stripe_public_key });
+  res.json({ publicKey: billing.mode().publicKey, mode:billing.mode().mode });
 });
+
+app.get('/api/billing-status',requireLogin,wrap(async(req,res) => {
+  const {mode,ready,reason}=await billing.readiness(pool,req.session.admin.gymId);
+  res.json({mode,ready,reason,webhooksConfigured:Boolean(process.env.STRIPE_WEBHOOK_SECRET)});
+}));
 
 // -----------------------------------------------------------------------------
 // PLAN MANAGEMENT ENDPOINTS
@@ -306,8 +316,8 @@ app.post('/api/plans', requireLogin, async (req, res) => {
   const gymId = req.session.admin.gymId;
   const { planName, monthlyPrice, signupFee, yearlyFee } = req.body;
 
-  if (!planName || !monthlyPrice) {
-    return res.status(400).json({ error: 'Plan name and monthly price are required.' });
+  if (typeof planName !== 'string' || !planName.trim() || planName.length > 120 || billing.money(monthlyPrice,true) === null || billing.money(signupFee) === null || billing.money(yearlyFee) === null) {
+    return res.status(400).json({ error: 'Enter a plan name and valid prices with at most two decimal places. Monthly price must be positive.' });
   }
 
   try {
@@ -349,7 +359,7 @@ app.post('/api/plans', requireLogin, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
-        `plan_${Date.now()}`,
+        `plan_${crypto.randomUUID()}`,
         gymId,
         planName,
         parseFloat(monthlyPrice),
@@ -364,7 +374,7 @@ app.post('/api/plans', requireLogin, async (req, res) => {
     res.json({ success: true, plan: rows[0] });
   } catch (err) {
     console.error('Error creating plan:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Could not create this plan. Please contact Gymvelto support.' });
   }
 });
 
@@ -372,130 +382,20 @@ app.post('/api/plans', requireLogin, async (req, res) => {
 // MEMBER ENROLLMENT & MANAGEMENT ENDPOINTS
 // -----------------------------------------------------------------------------
 
-// Register new member & attach subscription + sign-up fee with platform fee
-app.post('/create-subscription', requireLogin, async (req, res) => {
-  const { paymentMethodId, email, fullName, phone, barcode, planId } = req.body;
-  const gymId = req.session.admin.gymId;
-
-  try {
-    // Validate the gym's current waiver before creating a customer or charging a card.
-    const waiver = await checkWaiver(pool, gymId, req.body);
-    const details = contactDetails(req.body.contactDetails);
-    const photo = signupPhoto(req.body.photo);
-    if (typeof fullName !== 'string' || !fullName.trim() || fullName.length > 200 ||
-        typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-        typeof phone !== 'string' || phone.trim().length < 5 || phone.length > 50) {
-      return res.status(400).json({ error: 'Enter a full name, valid email, and phone number.' });
-    }
-    let assignedBarcode = barcode;
-    if (assignedBarcode) {
-      const dup = await pool.query('SELECT 1 FROM members WHERE "gymId" = $1 AND barcode = $2', [
-        gymId,
-        assignedBarcode,
-      ]);
-      if (dup.rowCount > 0) {
-        return res.status(400).json({ error: 'That barcode is already assigned to another member.' });
-      }
-    } else {
-      for (let i = 0; i < 10; i++) {
-        const candidate = `BC-${Math.floor(1000 + Math.random() * 9000)}`;
-        const dup = await pool.query('SELECT 1 FROM members WHERE "gymId" = $1 AND barcode = $2', [
-          gymId,
-          candidate,
-        ]);
-        if (dup.rowCount === 0) {
-          assignedBarcode = candidate;
-          break;
-        }
-      }
-      if (!assignedBarcode) {
-        return res.status(500).json({ error: 'Could not generate a unique barcode. Try again.' });
-      }
-    }
-
-    // 1. Create Customer in Stripe
-    const customer = await stripe.customers.create({
-      payment_method: paymentMethodId,
-      email,
-      name: fullName,
-      invoice_settings: { default_payment_method: paymentMethodId },
-    });
-
-    // 2. Attach Payment Method to Customer
-    await stripe.paymentMethods.attach(paymentMethodId, {
-      customer: customer.id,
-    });
-
-    let createdSubscriptionId = null;
-
-    // 3. Create Subscription in Stripe with Platform Fee Cut & One-time Sign-up Fee
-    if (planId) {
-      const planRes = await pool.query('SELECT * FROM plans WHERE id = $1 AND "gymId" = $2', [
-        planId,
-        gymId,
-      ]);
-
-      if (planRes.rows.length > 0 && planRes.rows[0].stripePriceId) {
-        const plan = planRes.rows[0];
-
-        // Fetch connected Stripe Account ID if the gym has one set
-        const gymRes = await pool.query('SELECT "stripeAccountId" FROM gyms WHERE id = $1', [gymId]);
-        const connectedAccountId = gymRes.rows[0]?.stripeAccountId;
-
-        // Build array for upfront fees (e.g., sign-up fee)
-        const addInvoiceItems = [];
-        if (plan.stripeSignupPriceId) {
-          addInvoiceItems.push({ price: plan.stripeSignupPriceId });
-        }
-
-        const subPayload = {
-          customer: customer.id,
-          items: [{ price: plan.stripePriceId }],
-          ...(addInvoiceItems.length > 0 && { add_invoice_items: addInvoiceItems }),
-          application_fee_percent: PLATFORM_FEE_PERCENT,
-          expand: ['latest_invoice.payment_intent'],
-        };
-
-        if (connectedAccountId) {
-          subPayload.transfer_data = { destination: connectedAccountId };
-        }
-
-        const subscription = await stripe.subscriptions.create(subPayload);
-        createdSubscriptionId = subscription.id;
-      }
-    }
-
-    await pool.query(
-      `WITH new_member AS (INSERT INTO members
-        ("fullName", email, phone, barcode, status, "planId", "stripeCustomerId", "stripeSubscriptionId", "gymId",
-         "waiverDocumentId", "waiverAcceptedAt", "waiverSignedName", "contactDetails")
-       VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id)
-       INSERT INTO member_photos ("memberId", "gymId", content, "contentType")
-       SELECT id, $8, $13::bytea, $14 FROM new_member WHERE $13::bytea IS NOT NULL`,
-      [
-        fullName,
-        email,
-        phone || '',
-        assignedBarcode,
-        planId || null,
-        customer.id,
-        createdSubscriptionId,
-        gymId,
-        waiver?.documentId || null,
-        waiver?.acceptedAt || null,
-        waiver?.signedName || null,
-        JSON.stringify(details),
-        photo?.content || null,
-        photo?.type || null,
-      ]
-    );
-
-    res.json({ success: true, barcode: assignedBarcode });
-  } catch (error) {
-    console.error('Stripe registration error:', error);
-    res.status(400).json({ error: error.message });
-  }
-});
+// Persist pending enrollment before contacting Stripe; retries use stable idempotency keys.
+app.post('/create-subscription',requireLogin,billing.enrollment(pool,stripe));
+app.post('/api/enrollment/confirm',requireLogin,billing.confirmEnrollment(pool,stripe));
+app.post('/api/member/:barcode/cancel-subscription',requireLogin,wrap(async(req,res)=>{
+  const gymId=req.session.admin.gymId;
+  if(req.body.confirm !== true) return res.status(400).json({error:'Confirm cancellation before continuing.'});
+  const member=(await pool.query('SELECT * FROM members WHERE "gymId"=$1 AND barcode=$2',[gymId,req.params.barcode])).rows[0];
+  if(!member?.stripeSubscriptionId) return res.status(404).json({error:'No linked subscription found for this member.'});
+  let sub=await stripe.subscriptions.retrieve(member.stripeSubscriptionId);
+  if((typeof sub.customer === 'string' ? sub.customer : sub.customer?.id) !== member.stripeCustomerId || sub.metadata?.gymId !== gymId) return res.status(409).json({error:'Subscription ownership needs a support review before cancellation.'});
+  if(!['canceled','incomplete_expired'].includes(sub.status)) sub=await stripe.subscriptions.cancel(sub.id,{invoice_now:false,prorate:false});
+  await billing.syncMember(pool,gymId,member,sub);
+  res.json({success:true});
+}));
 
 // All members for current gym
 app.get(
@@ -531,6 +431,10 @@ app.post(
     const gymId = req.session.admin.gymId;
     const { originalBarcode, fullName, email, phone, barcode, status } = req.body;
 
+    if (typeof fullName !== 'string' || !fullName.trim() || fullName.length > 200 || typeof email !== 'string' || email.length > 254 || typeof phone !== 'string' || phone.length > 50 || typeof barcode !== 'string' || !barcode.trim() || barcode.length > 100 || !['active','unpaid'].includes(status)) return res.status(400).json({error:'Enter valid member details and status.'});
+    const current=(await pool.query('SELECT status, "stripeSubscriptionId" FROM members WHERE "gymId"=$1 AND barcode=$2',[gymId,originalBarcode])).rows[0];
+    if (!current) return res.status(404).json({error:'Member record not found.'});
+    if (current.stripeSubscriptionId && status !== current.status) return res.status(409).json({error:'Billing status is managed by Stripe. Use Stripe to change or cancel the subscription.'});
     try {
       const details = req.body.contactDetails === undefined ? null : contactDetails(req.body.contactDetails);
       const result = await pool.query(
@@ -567,6 +471,7 @@ app.post(
       barcode,
     ]);
     const member = rows[0];
+    await pool.query('INSERT INTO check_ins ("gymId","memberId",access) VALUES ($1,$2,$3)',[req.session.admin.gymId,member?.id || null,member?.status === 'active']);
 
     if (!member) {
       return res.json({ access: false, message: 'Card / Barcode Not Recognized' });
@@ -587,6 +492,15 @@ app.delete(
   '/api/member/:barcode',
   requireLogin,
   wrap(async (req, res) => {
+    const member = (await pool.query('SELECT "stripeCustomerId", "stripeSubscriptionId" FROM members WHERE "gymId"=$1 AND barcode=$2',[req.session.admin.gymId,req.params.barcode])).rows[0];
+    if (!member) return res.status(404).json({error:'Member not found.'});
+    if (member.stripeSubscriptionId) {
+      const sub=await stripe.subscriptions.retrieve(member.stripeSubscriptionId);
+      if (!['canceled','incomplete_expired'].includes(sub.status)) return res.status(409).json({error:'Cancel this member’s subscription in Stripe before deleting the record. Deleting a record does not stop billing.'});
+    } else if (member.stripeCustomerId) {
+      const subscriptions=await stripe.subscriptions.list({customer:member.stripeCustomerId,status:'all',limit:100});
+      if (subscriptions.has_more || subscriptions.data.some(sub=>!['canceled','incomplete_expired'].includes(sub.status))) return res.status(409).json({error:'This customer may still have an active subscription. Cancel billing in Stripe before deleting.'});
+    }
     const result = await pool.query('DELETE FROM members WHERE "gymId" = $1 AND barcode = $2', [
       req.session.admin.gymId,
       req.params.barcode,
@@ -600,13 +514,25 @@ app.delete(
 // START
 // -----------------------------------------------------------------------------
 
-initDb()
+app.use((err,req,res,next) => {
+  console.error('Unhandled request error',{type:err.type || err.name,code:err.code});
+  if (res.headersSent) return next(err);
+  res.status(err.type === 'entity.too.large' ? 413 : err instanceof SyntaxError ? 400 : 500).json({error:'Unable to complete this request. Please try again or contact support.'});
+});
+
+if (require.main === module) initDb()
   .then(() => {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`Gymvelto Server running on port ${PORT}`);
+    });
+    process.on('SIGTERM', () => {
+      server.close(() => pool.end().then(() => process.exit(0)));
+      setTimeout(() => process.exit(1),25000).unref();
     });
   })
   .catch((err) => {
     console.error('Failed to initialize database:', err);
     process.exit(1);
   });
+
+module.exports = { app, pool, initDb };

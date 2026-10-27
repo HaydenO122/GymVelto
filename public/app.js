@@ -1,9 +1,20 @@
+// A consistent sign-in redirect for expired sessions, including JSON API calls.
+const originalFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const response = await originalFetch(...args);
+  const target = new URL(typeof args[0] === 'string' ? args[0] : args[0].url,location.href);
+  if (target.origin === location.origin && response.status === 401) {
+    location.assign('/index.html?expired=1');
+    throw new Error('Your session expired. Please sign in again.');
+  }
+  return response;
+};
 // Automatically inject the top-left Gymvelto brand link on every page
 document.addEventListener("DOMContentLoaded", () => {
   const nav = document.querySelector('nav');
   if (nav && !/^(\/|\/index.html|\/login.html)$/.test(location.pathname)) {
     nav.replaceChildren();
-    [['/dashboard','Dashboard'],['/scan','Barcode Scanner'],['/members','Members'],['/signup','Sign Up Member'],['/plans','Plans'],['/documents','Documents'],['/gym-profile','Gym Profile'],['/admins','Admins'],['/logout','Logout']].forEach(([href,label]) => {
+    [['/getting-started','Get started'],['/dashboard','Dashboard'],['/billing','Billing'],['/check-ins','Check-ins'],['/scan','Barcode Scanner'],['/members','Members'],['/signup','Sign Up Member'],['/plans','Plans'],['/documents','Documents'],['/gym-profile','Gym Profile'],['/admins','Admins'],['/logout','Logout']].forEach(([href,label]) => {
       const link = document.createElement('a'); link.href = href; link.textContent = label;
       if (location.pathname.replace(/\.html$/, '') === href) { link.className = 'active'; link.setAttribute('aria-current','page'); }
       nav.append(link);
@@ -33,35 +44,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// Member Form Handling Logic
-const memberForm = document.getElementById('memberForm');
-const membersUl = document.getElementById('membersUl');
 
-const members = [];
-
-if (memberForm) {
-  memberForm.addEventListener('submit', function(event) {
-    event.preventDefault();
-
-    const fullName = memberForm.fullName.value.trim();
-    const email = memberForm.email.value.trim();
-    const phone = memberForm.phone.value.trim();
-
-    if (fullName && email) {
-      const member = { fullName, email, phone };
-      members.push(member);
-
-      // Add member to UI list if the list element exists on the page
-      if (membersUl) {
-        const li = document.createElement('li');
-        li.textContent = `${fullName} (${email}${phone ? ', ' + phone : ''})`;
-        membersUl.appendChild(li);
-      }
-
-      // Clear form fields
-      memberForm.reset();
-    } else {
-      alert('Please complete at least name and email fields.');
-    }
-  });
-}
+document.addEventListener('DOMContentLoaded',async () => {
+  if (/^(\/|\/index.html|\/login.html)$/.test(location.pathname)) return;
+  const notice=document.createElement('aside');notice.className='beta-notice';notice.setAttribute('role','status');
+  notice.textContent='Gymvelto beta';document.body.prepend(notice);
+  try {
+    const profile=await (await fetch('/api/gym-profile')).json();
+    const config=await (await fetch('/api/billing-status')).json();
+    notice.textContent=profile.name + ' • Gymvelto beta • ' + (config.mode === 'test' ? 'Sandbox payments — test cards only. No real charges.' : config.ready ? 'Live payments' : 'Billing setup required');
+    const help=document.createElement('a');help.href='mailto:gymvelto@gmail.com';help.textContent=' Get help';notice.append(help);
+  } catch { notice.textContent='Gymvelto beta • Unable to load account status. Refresh or contact gymvelto@gmail.com.'; }
+});

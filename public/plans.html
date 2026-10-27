@@ -46,15 +46,15 @@
         <div style="display: flex; gap: 10px;">
           <div style="flex: 1;">
             <label for="monthlyPrice">Monthly Fee ($)</label>
-            <input type="number" id="monthlyPrice" step="0.01" required placeholder="29.99" />
+            <input type="number" id="monthlyPrice" min="0.01" step="0.01" required placeholder="29.99" />
           </div>
           <div style="flex: 1;">
             <label for="signupFee">Sign Up Fee ($ - Optional)</label>
-            <input type="number" id="signupFee" step="0.01" placeholder="49.00" />
+            <input type="number" id="signupFee" min="0" step="0.01" placeholder="49.00" />
           </div>
           <div style="flex: 1;">
             <label for="yearlyFee">Annual Fee ($ - Optional)</label>
-            <input type="number" id="yearlyFee" step="0.01" placeholder="39.99" />
+            <input type="number" id="yearlyFee" min="0" step="0.01" placeholder="39.99" />
           </div>
         </div>
 
@@ -83,13 +83,14 @@
         const div = document.createElement('div');
         div.className = 'plan-card';
         div.innerHTML = `
-          <h3>${p.planName}</h3>
+          <h3><span class="plan-name"></span></h3>
           <div class="price-tag">$${p.monthlyPrice.toFixed(2)} <span style="font-size: 0.5em; color:#aaa;">/mo</span></div>
           <div class="fee-info">
             <p>Initiation Fee: <strong>$${p.signupFee ? p.signupFee.toFixed(2) : '0.00'}</strong></p>
             <p>Annual Maintenance: <strong>$${p.yearlyFee ? p.yearlyFee.toFixed(2) : '0.00'}</strong></p>
           </div>
         `;
+        div.querySelector('.plan-name').textContent=p.planName;
         listContainer.appendChild(div);
       });
     }

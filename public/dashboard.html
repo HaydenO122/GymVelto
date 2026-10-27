@@ -118,14 +118,11 @@
         members.slice(0, 5).forEach(m => {
           const tr = document.createElement('tr');
           const isGreen = m.status === 'active';
-          tr.innerHTML = `
-            <td>${m.fullName}</td>
-            <td><strong>${m.barcode || 'N/A'}</strong></td>
-            <td>${m.phone || '-'}</td>
-            <td style="color: ${isGreen ? '#4caf50' : '#f44336'}; font-weight: bold;">
-              ${m.status ? m.status.toUpperCase() : 'ACTIVE'}
-            </td>
-          `;
+          [m.fullName,m.barcode || 'N/A',m.phone || '-',(m.status || 'unpaid').toUpperCase()].forEach((value,index) => {
+            const td=document.createElement('td');td.textContent=value;
+            if(index===3) td.style.color=isGreen ? '#4caf50' : '#f44336';
+            tr.append(td);
+          });
           tbody.appendChild(tr);
         });
       } catch (e) {

@@ -69,7 +69,7 @@
       <section class="signup-section"><h2>Payment</h2><div class="form-field"><label for="card-element">Credit / Debit Card</label>
       <div id="card-element"></div></div></section>
 
-      <button type="submit" id="submitBtn" disabled>Register & Charge Membership</button>
+      <button type="submit" id="submitBtn" disabled>Register & Confirm Payment</button>
       <p id="msg" style="margin-top: 15px; font-weight: bold;"></p>
     </form>
   </main>
@@ -82,7 +82,7 @@
 
     // Auto-generate barcode tag
     autoGenBtn.addEventListener('click', () => {
-      barcodeInput.value = `BC-${Math.floor(1000 + Math.random() * 9000)}`;
+      barcodeInput.value = `BC-${crypto.randomUUID().slice(0,12).toUpperCase()}`;
     });
 
     // Prevent scanner Enter key from prematurely submitting the form
@@ -123,6 +123,9 @@
 
       const keyRes = await fetch('/stripe-key');
       const { publicKey } = await keyRes.json();
+      const config = await (await fetch('/api/billing-status')).json();
+      if (!config.ready) throw new Error(config.reason);
+      if (config.mode === 'test') document.getElementById('msg').textContent = 'Sandbox beta: use Stripe test cards only. No real money is collected.';
       const stripe = Stripe(publicKey);
       const elements = stripe.elements();
       const card = elements.create('card');
@@ -131,6 +134,8 @@
       const form = document.getElementById('signup-form');
       const msg = document.getElementById('msg');
       const submitBtn = document.getElementById('submitBtn');
+      let enrollmentId = crypto.randomUUID();
+      let savedPaymentMethod = null;
       submitBtn.disabled = false;
 
       form.addEventListener('submit', async (e) => {
@@ -142,7 +147,7 @@
         msg.style.color = '#fff';
         msg.textContent = 'Processing payment...';
 
-        const { paymentMethod, error } = await stripe.createPaymentMethod({
+        const { paymentMethod, error } = savedPaymentMethod ? {paymentMethod:savedPaymentMethod} : await stripe.createPaymentMethod({
           type: 'card',
           card: card,
           billing_details: {
@@ -157,10 +162,12 @@
           return;
         }
 
+        savedPaymentMethod = paymentMethod;
         const res = await fetch('/create-subscription', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            enrollmentId,
             paymentMethodId: paymentMethod.id,
             fullName: document.getElementById('fullName').value,
             email: document.getElementById('email').value,
@@ -172,11 +179,19 @@
           })
         });
 
-        const data = await res.json();
+        let data = await res.json();
+        if (data.clientSecret && !data.success) {
+          msg.textContent = 'Complete the payment confirmation to activate this member.';
+          const result = await stripe.confirmCardPayment(data.clientSecret);
+          if (result.error) throw new Error(result.error.message);
+          data = await (await fetch('/api/enrollment/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enrollmentId})})).json();
+        }
         if (data.success) {
           msg.style.color = '#4caf50';
           msg.textContent = `Success! Member enrolled with Barcode: ${data.barcode}`;
           form.reset();
+          enrollmentId = crypto.randomUUID();
+          savedPaymentMethod = null;
           document.getElementById('member-photo-preview').hidden = true;
           card.clear();
           await GymWaiver.load();

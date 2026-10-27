@@ -1,18 +1,1 @@
-[
-  {
-    "fullName": "Alex Smith",
-    "email": "alex@example.com",
-    "phone": "8035550144",
-    "barcode": "BC-1001",
-    "status": "active",
-    "gymId": "gym_test_001"
-  },
-  {
-    "fullName": "Jordan Lee",
-    "email": "jordan@example.com",
-    "phone": "8035550188",
-    "barcode": "BC-1002",
-    "status": "unpaid",
-    "gymId": "gym_test_001"
-  }
-]
+[]

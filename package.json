@@ -8,5 +8,13 @@
     "express-session": "^1.19.0",
     "pg": "^8.23.0",
     "stripe": "^22.6.1"
+  },
+  "name": "gymvelto",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "start": "node Server.js",
+    "test": "node --test test/*.test.js",
+    "check": "node --check Server.js && node --check billing.js && node --check security.js"
   }
 }

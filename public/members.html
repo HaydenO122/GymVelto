@@ -144,7 +144,7 @@
       if (!confirm(`Are you sure you want to delete member: ${name}?`)) return;
 
       try {
-        const res = await fetch(`/api/member/${barcode}`, { method: 'DELETE' });
+        const res = await fetch(`/api/member/${encodeURIComponent(barcode)}`, { method: 'DELETE' });
         const data = await res.json();
         if (data.success) {
           fetchMembers(); // Reload table

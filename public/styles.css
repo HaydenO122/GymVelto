@@ -173,3 +173,7 @@ th, td {
   .barcode-controls { flex-direction: column; }
   .barcode-controls input { width: 100%; flex: auto; }
 }
+
+.beta-notice{padding:12px 20px;background:#20332b;color:#e7f8dc;text-align:center;font-size:14px;border-bottom:1px solid #47634e}.beta-notice a{color:#c9ec97}input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #b8df72;outline-offset:3px}
+
+.workspace{max-width:1080px!important}.eyebrow{letter-spacing:.15em;font-size:12px;color:#b8df72}.intro-copy{font-size:18px;color:#bbb}.workspace-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;margin:24px 0}.workspace-card{background:#1c2420;border:1px solid #34463a;border-radius:14px;padding:24px;margin-bottom:18px}.workspace-card h2{font-size:20px;margin-top:0}.workspace-card p{color:#c6d0c8;line-height:1.65}.workspace-link{display:inline-block;margin-top:12px;padding:11px 15px;border-radius:7px;background:#c9eaa2;color:#19261c;font-weight:700;text-decoration:none}.workspace table{display:block;overflow-x:auto}.help-text{line-height:1.6}nav{flex-wrap:wrap;gap:8px}

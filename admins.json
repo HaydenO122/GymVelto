@@ -1,17 +1,1 @@
-[
-  {
-    "username": "admin",
-    "passwordHash": "$2b$10$XbnbMRxuD6SMCr4g1yll9.4EIETOp1TVs3H.dmMcNTUAFy8XIZfF.",
-    "gymId": "gym_test_001"
-  },
-  {
-    "username": "Hayden",
-    "passwordHash": "$2b$10$XdOsKYv/VtrfCwrXIOOxKuHnsTHqoMbHZ2fLPr06e.39RNOHcX9bq",
-    "gymId": "gym_test_001"
-  },
-  {
-    "username": "hayden",
-    "passwordHash": "$2b$10$AlHb0xS3RMzkFRijemIVcexx710vKY.2cQcLoRzESZrqNf3yVc0TW",
-    "gymId": "gym_test_001"
-  }
-]
+[]
